@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: migration
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mia
+  namespace: migration
+  labels:
+    app: mia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mia
+  template:
+    metadata:
+      labels:
+        app: mia
+    spec:
+      containers:
+      - name: bob
+        image: registry.k8s.io/e2e-test-images/agnhost:2.40
+        command:
+          - /agnhost
+          - netexec
+          - --http-port=8080
+        ports:
+          - containerPort: 8080
+            name: http
+        env:
+          - name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+        resources:
+          requests:
+            cpu: 10m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: mia
+  name: mia
+  namespace: migration
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: http
+    name: http
+  selector:
+    app: mia
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: migration-ingress
+  namespace: migration
+  annotations:
+    konghq.com/strip-path: "true"
+spec:
+  ingressClassName: kong
+  rules:
+  - http:
+      paths:
+      - path: /migration
+        pathType: Prefix
+        backend:
+          service:
+            name: mia
+            port:
+              number: 80
